@@ -1,27 +1,100 @@
+import { PrismaClient } from '@prisma/client'
 import express from 'express'
+import cors from 'cors'
+import { convertHourStringToMinutes } from './utils/convertHourStringToMinutes'
+import { convertMinutesToHourString } from './utils/ConvertMinutesToHourString'
 
 const app = express()
 
-app.get('/games', (request, response) => {
-  return response.json([])
+app.use(express.json())
+app.use(cors())
+
+const prisma = new PrismaClient({
+  log: ['query']
 })
 
-app.post('/ads', (request, response) => {
-  return response.status(201).json([])
+app.get('/games', async (request, response) => {
+  const games = await prisma.game.findMany({
+    include: {
+      _count: {
+        select: {
+          ads: true
+        }
+      }
+    }
+  })
+
+  return response.json(games)
 })
 
-app.get('/games/:id/ads', (request, response) => {
+app.post('/games/:gameId/ads', async (request, response) => {
+  const gameId = request.params.gameId
+  const body = request.body
+
+  // Realizar validacao - colinhacks/zod
+
+  const ad = await prisma.ad.create({
+    data: {
+      gameId,
+      name: body.name,
+      yearsPlaying: body.yearsPlaying,
+      discord: body.discord,
+      weekDays: body.weekDays.join(','),
+      hourStart: convertHourStringToMinutes(body.hourStart),
+      hourEnd: convertHourStringToMinutes(body.hourEnd),
+      useVoiceChannel: body.useVoiceChannel,
+    }
+  })
+
+  return response.status(201).json(ad)
+})
+
+app.get('/games/:id/ads', async (request, response) => {
   const gameId = request.params.id
-  console.log(gameId)
 
-  return response.json([])
+  const ads = await prisma.ad.findMany({
+    select: {
+      id: true,
+      name: true,
+      weekDays: true,
+      useVoiceChannel: true,
+      yearsPlaying: true,
+      hourStart: true,
+      hourEnd: true
+    },
+    where: {
+      gameId
+    },
+    orderBy: {
+      createdAt: 'desc'
+    }
+  })
+
+  return response.json(ads.map(ad => {
+    return {
+      ...ad,
+      weekDays: ad.weekDays.split(','),
+      hourStart: convertMinutesToHourString(ad.hourStart),
+      hourEnd: convertMinutesToHourString(ad.hourEnd)
+    }
+  }))
 })
 
-app.get('/ads/:id/discord', (request, response) => {
+app.get('/ads/:id/discord', async (request, response) => {
   const adId = request.params.id
-  console.log(adId)
 
-  return response.json([])
+  const ad = await prisma.ad.findUniqueOrThrow({
+    select: {
+      discord: true
+    },
+    where: {
+      id: adId
+    }
+  })
+
+  return response.json({
+    discord: ad.discord
+  })
 })
 
 app.listen(3333)
